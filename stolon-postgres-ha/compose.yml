@@ -1,0 +1,153 @@
+services:
+  # Stolon depends on a consistent key-value store to keep track of PG instances (keepers) and elect a new primary if the existing one goes down.
+  # We use etcd here, but you could use Consul or Zookeeper if you wanted.
+  # We have 3 separate keepers instead of replicas so that each one can be addressed individually. Because we don't use replicas, we assign
+  # the machine each runs on manually to ensure that they don't all run on one machine, which would undermine high-availability.
+  #
+  # It is important to choose servers that have low latency to each other, as higher latency means etcd takes longer to agree on state, which
+  # means Stolon will take longer to elect a new primary when a failure occurs.
+
+  etcd-00:
+    image: quay.io/coreos/etcd:v3.7.1
+    command:
+      - etcd
+      - --name=etcd-00
+      - --data-dir=data.etcd
+      - --advertise-client-urls=http://etcd-00:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-advertise-peer-urls=http://etcd-00:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-cluster=etcd-00=http://etcd-00:2380,etcd-01=http://etcd-01:2380,etcd-02=http://etcd-02:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=${ETCD_TOKEN}
+    volumes:
+      - etcd-00vol:/data.etcd
+    deploy:
+      update_config:
+        order: stop-first
+    x-machines:
+      - server1
+
+  etcd-01:
+    image: quay.io/coreos/etcd:v3.7.1
+    command:
+      - etcd
+      - --name=etcd-01
+      - --data-dir=data.etcd
+      - --advertise-client-urls=http://etcd-01:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-advertise-peer-urls=http://etcd-01:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-cluster=etcd-00=http://etcd-00:2380,etcd-01=http://etcd-01:2380,etcd-02=http://etcd-02:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=${ETCD_TOKEN}
+    volumes:
+      - etcd-01vol:/data.etcd
+    deploy:
+      update_config:
+        order: stop-first
+    x-machines:
+      - server2
+
+  etcd-02:
+    image: quay.io/coreos/etcd:v3.7.1
+    command:
+      - etcd
+      - --name=etcd-02
+      - --data-dir=data.etcd
+      - --advertise-client-urls=http://etcd-02:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --initial-advertise-peer-urls=http://etcd-02:2380
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-cluster=etcd-00=http://etcd-00:2380,etcd-01=http://etcd-01:2380,etcd-02=http://etcd-02:2380
+      - --initial-cluster-state=new
+      - --initial-cluster-token=${ETCD_TOKEN}
+    volumes:
+      - etcd-02vol:/data.etcd
+    deploy:
+      update_config:
+        order: stop-first
+    x-machines:
+      - server3
+
+  # Sentinels watch the Postgres instances (keepers) and elect a new primary if the primary dies.
+  # We run 3 replicas of this.
+  pg-sentinel:
+    image: stolon
+    build: .
+    command: gosu stolon stolon-sentinel --cluster-name stolon-cluster --store-backend=etcdv3 --store-endpoints http://etcd-00:2379,http://etcd-01:2379,http://etcd-02:2379
+    deploy:
+      replicas: 3
+      update_config:
+        order: stop-first
+
+  # Each keeper is a Postgres instance managed by Stolon.
+  # We set --pg-listen-address to 0.0.0.0 instead of pg-keeperX because the DNS entry will not be present during initial deployment.
+  # We instead use --pg-advertise-address to adveritse the correct address to the other servers while binding to a statically-known address.
+  # We have 3 separate keepers instead of replicas so that each one can be addressed individually. Because we don't use replicas, we assign
+  # the machine each runs on manually to ensure that they don't all run on one machine, which would undermine high-availability.
+
+  pg-keeper1:
+    image: stolon
+    build: .
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgkeeper1:/var/lib/postgresql
+    command: gosu stolon stolon-keeper --pg-listen-address 0.0.0.0 --pg-advertise-address pg-keeper1 --pg-repl-username replication --uid keeper1 --pg-su-username postgres --pg-su-password ${POSTGRES_PASSWORD} --pg-repl-password ${POSTGRES_REPL_PASSWORD} --data-dir /var/lib/postgresql/data --cluster-name stolon-cluster --store-backend=etcdv3 --store-endpoints http://etcd-00:2379,http://etcd-01:2379,http://etcd-02:2379
+    x-machines:
+      - server1
+
+  pg-keeper2:
+    image: stolon
+    build: .
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgkeeper2:/var/lib/postgresql
+    command: gosu stolon stolon-keeper --pg-listen-address 0.0.0.0 --pg-advertise-address pg-keeper2 --pg-repl-username replication --uid keeper2 --pg-su-username postgres --pg-su-password ${POSTGRES_PASSWORD} --pg-repl-password ${POSTGRES_REPL_PASSWORD} --data-dir /var/lib/postgresql/data --cluster-name stolon-cluster --store-backend=etcdv3 --store-endpoints http://etcd-00:2379,http://etcd-01:2379,http://etcd-02:2379
+    x-machines:
+      - server2
+
+  pg-keeper3:
+    image: stolon
+    build: .
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgkeeper3:/var/lib/postgresql
+    command: gosu stolon stolon-keeper --pg-listen-address 0.0.0.0 --pg-advertise-address pg-keeper3 --pg-repl-username replication --uid keeper3 --pg-su-username postgres --pg-su-password ${POSTGRES_PASSWORD} --pg-repl-password ${POSTGRES_REPL_PASSWORD} --data-dir /var/lib/postgresql/data --cluster-name stolon-cluster --store-backend=etcdv3 --store-endpoints http://etcd-00:2379,http://etcd-01:2379,http://etcd-02:2379
+    x-machines:
+      - server3
+
+  # Proxies always direct traffic to the current primary, and forcibly disconnect clients when the primary changes to force them to reconnect to the new primary.
+  # We run 3 replicas of this.
+  # You may want to make a replica of this run on every machine that has your app on it to improve latency and reliability.
+  # You can point your app to nearest.pg-proxy.internal to always get the closest instance.
+  pg-proxy:
+    image: stolon
+    build: .
+    command: gosu stolon stolon-proxy --listen-address 0.0.0.0 --cluster-name stolon-cluster --store-backend=etcdv3 --store-endpoints http://etcd-00:2379,http://etcd-01:2379,http://etcd-02:2379 --log-level info
+    deploy:
+      replicas: 3
+      update_config:
+        order: stop-first
+    # Uncomment to make PG available on the host's loopback address.
+    # This can be useful for debugging.
+    #x-ports:
+    #  - 127.0.0.1:5432:5432@host
+
+volumes:
+  etcd-00vol:
+  etcd-01vol:
+  etcd-02vol:
+
+  pgkeeper1:
+  pgkeeper2:
+  pgkeeper3:
