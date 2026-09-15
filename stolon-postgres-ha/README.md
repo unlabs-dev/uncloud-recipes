@@ -34,3 +34,8 @@ primary.
 
 The etcd cluster that maintains stolon cluster state similarly store its data in corresponding volumes. If all etcd instances are lost, you will need to recreate them
 and then recreate the cluster data again according to the steps in [Setup](#setup).
+
+## Customizing Postgres and Stolon
+
+Both Postgres and stolon are built using a [Dockerfile](Dockerfile). You can change the Postgres version inside it as well as change the commit hash stolon is being built
+from.
