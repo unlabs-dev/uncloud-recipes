@@ -136,8 +136,6 @@ services:
     command: gosu stolon stolon-proxy --listen-address 0.0.0.0 --cluster-name stolon-cluster --store-backend=etcdv3 --store-endpoints http://etcd-00:2379,http://etcd-01:2379,http://etcd-02:2379 --log-level info
     deploy:
       replicas: 3
-      update_config:
-        order: stop-first
     # Uncomment to make PG available on the host's loopback address.
     # This can be useful for debugging.
     #x-ports:
