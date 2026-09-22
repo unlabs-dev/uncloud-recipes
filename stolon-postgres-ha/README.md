@@ -39,3 +39,10 @@ and then recreate the cluster data again according to the steps in [Setup](#setu
 
 Both Postgres and stolon are built using a [Dockerfile](Dockerfile). You can change the Postgres version inside it as well as change the commit hash stolon is being built
 from.
+
+## etcd Compaction
+
+By default, etcd keeps the entire history of its keyspace. This means that without compaction, the etcd database will eventually fill up and stop accepting writes.
+This recipe uses an auto-compaction flag that keeps the last hour of history and automatically prunes older history.
+
+It is recommended to read the [etcd maintenance guide](https://etcd.io/docs/v3.7/op-guide/maintenance/).
