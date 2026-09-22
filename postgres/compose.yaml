@@ -9,7 +9,7 @@ services:
     env_file: .env
 
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
 
     # Expose port to host for local access
     x-ports:
